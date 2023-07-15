@@ -44,8 +44,11 @@ struct moduleState {
   double angle;
 };
 
+double motorRotationsPerDegree =  / 360.0;
+
 int encoderPin1 = 2;
 int encoderPin2 = 3;
+int encoderRes = 28;
 
 volatile int lastEncoded = 0;
 volatile long encoderValue = 0;
@@ -141,8 +144,12 @@ void quaternionToEulerRV(sh2_RotationVectorWAcc_t* rotational_vector, euler_t* y
   quaternionToEuler(rotational_vector->real, rotational_vector->i, rotational_vector->j, rotational_vector->k, ypr, degrees);
 }
 
-long convertRawEncoder(long rawValue) {
-  return rawValue/2800;
+double rawEncoderToAngle(long rawValue) {
+  return (rawValue / ;
+}
+
+long angleToRawEncoder(double angle) {
+  return angle * 2800;
 }
 
 void updateEncoder(){
@@ -156,7 +163,6 @@ void updateEncoder(){
   if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderValue ++;
 
   lastEncoded = encoded; //store this value for next time
-
 }
 
 void setup() {
@@ -279,7 +285,6 @@ void addRotation(float currentRotation, float newRotation, int module) {
   m_moduleStates[module].angle = atan2(sinResult, cosResult);
 }
 
-
 void optimize() {
   float delta0 = m_prevModuleStates[0].angle - m_moduleStates[0].angle;
   if (abs(delta0) > 90.0) {
@@ -304,45 +309,50 @@ float getModuleSpeed(int module) {
   return m_moduleStates[module].speed * 255;
 }
 
+void  toMotorOutput() {
+  int desiredCounts = ();
+  int prevCounts = (prevAngle / 360.0 * ENCODER_RESOLUTION);
+}
+
 void setModuleStates(moduleState moduleStates[]) {
   optimize();
 
-  //math
+  
 
   if (moduleStates[0].speed < 0) {
-    frontLeft.run(FORWARD);
-    frontRight.run(BACKWARD);
-    frontLeft.setSpeed(getModuleSpeed(0));
-    frontRight.setSpeed(getModuleSpeed(0));
+    frontLeft->run(FORWARD);
+    frontRight->run(BACKWARD);
+    frontLeft->setSpeed(getModuleSpeed(0));
+    frontRight->setSpeed(getModuleSpeed(0));
   } else {
-    frontLeft.run(BACKWARD);
-    frontRight.run(FORWARD);
-    frontLeft.setSpeed(getModuleSpeed(0));
-    frontRight.setSpeed(getModuleSpeed(0));
+    frontLeft->run(BACKWARD);
+    frontRight->run(FORWARD);
+    frontLeft->setSpeed(getModuleSpeed(0));
+    frontRight->setSpeed(getModuleSpeed(0));
   }
 
   if (moduleStates[1].speed < 0) {
-    frontLeft.run(FORWARD);
-    frontRight.run(BACKWARD);
-    frontLeft.setSpeed(getModuleSpeed(1));
-    frontRight.setSpeed(getModuleSpeed(1));
+    frontLeft->run(FORWARD);
+    frontRight->run(BACKWARD);
+    frontLeft->setSpeed(getModuleSpeed(1));
+    frontRight->setSpeed(getModuleSpeed(1));
   } else {
-    frontLeft.run(BACKWARD);
-    frontRight.run(FORWARD);
-    frontLeft.setSpeed(getModuleSpeed(1));
-    frontRight.setSpeed(getModuleSpeed(1));
+    frontLeft->run(BACKWARD);
+    frontRight->run(FORWARD);
+    frontLeft->setSpeed(getModuleSpeed(1));
+    frontRight->setSpeed(getModuleSpeed(1));
   }
 
   if (moduleStates[2].speed < 0) {
-    frontLeft.run(FORWARD);
-    frontRight.run(BACKWARD);
-    frontLeft.setSpeed(getModuleSpeed(2));
-    frontRight.setSpeed(getModuleSpeed(2));
+    frontLeft->run(FORWARD);
+    frontRight->run(BACKWARD);
+    frontLeft->setSpeed(getModuleSpeed(2));
+    frontRight->setSpeed(getModuleSpeed(2));
   } else {
-    frontLeft.run(BACKWARD);
-    frontRight.run(FORWARD);
-    frontLeft.setSpeed(getModuleSpeed(2));
-    frontRight.setSpeed(getModuleSpeed(2));
+    frontLeft->run(BACKWARD);
+    frontRight->run(FORWARD);
+    frontLeft->setSpeed(getModuleSpeed(2));
+    frontRight->setSpeed(getModuleSpeed(2));
   }
 }
 
