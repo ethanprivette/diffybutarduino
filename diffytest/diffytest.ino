@@ -1,4 +1,3 @@
-#include <Adafruit_MotorShield.h>
 #include <AlfredoConnect.h>
 #include <BluetoothSerial.h>
 #include <Alfredo_NoU2.h>
@@ -8,72 +7,114 @@ BluetoothSerial bluetooth;
 
 #define BNO08X_RESET -1
 
-// Create the motor shield object with the default I2C address
-// Adafruit_MotorShield AFMS = Adafruit_MotorShield();
-// Or, create it with a different I2C address (say for stacking)
-Adafruit_MotorShield rearModules = Adafruit_MotorShield(0x60);
+//Motor def
+NoU_Motor rearModLeft(1);
+NoU_Motor rearModRight(2);
+NoU_Motor frontLModLeft(3);
+NoU_Motor frontLModRight(4);
+NoU_Motor frontRModLeft(5);
+NoU_Motor frontRModRight(6);
 
-Adafruit_MotorShield frontModuleAndExtra = Adafruit_MotorShield(0x61); //front module motors port 1 and 2
-
-// Select which 'port' M1, M2, M3 or M4. In this case, M1
-Adafruit_DCMotor *rearLeft1 = rearModules.getMotor(1);
-Adafruit_DCMotor *rearLeft2 = rearModules.getMotor(2);
-Adafruit_DCMotor *rearRight1 = rearModules.getMotor(3);
-Adafruit_DCMotor *rearRight2 = rearModules.getMotor(4);
-Adafruit_DCMotor *frontLeft = frontModuleAndExtra.getMotor(1);
-Adafruit_DCMotor *frontRight = frontModuleAndExtra.getMotor(2);
-
+//bno08x def
 Adafruit_BNO08x  bno08x(BNO08X_RESET);
 sh2_SensorValue_t sensorValue;
 
 long report_interval = 5000;
 
+//yaw-pitch-roll struct
 struct euler_t {
   float yaw;
   float pitch;
   float roll;
 } ypr;
 
+//Translation struct
 struct Translation2d {
   double y;
   double x;
 };
 
+//Module state struct
 struct moduleState {
   float speed;
   double angle;
 };
 
-double motorRotationsPerDegree =  / 360.0;
+//ENCODERS 0-3 WILL BE ON A DIF NoU2
 
-int encoderPin1 = 2;
-int encoderPin2 = 3;
-int encoderRes = 28;
+//encoder stuff
+double motorRotationsPerDegree =  360.0;
 
-volatile int lastEncoded = 0;
-volatile long encoderValue = 0;
+//encoder 0
+int encoder0Pin1 = 0; //CHANGE
+int encoder0Pin2 = 0; //CHANGE
 
-double m_sin = 0;
-double m_cos = 0;
+volatile int lastEncoder0Pos = 0;
+volatile long encoder0Pos = 0;
 
+//encoder 1
+int encoder1Pin1 = 0; //CHANGE
+int encoder1Pin2 = 0; //CHANGE
+
+volatile int lastEncoder1Pos = 0;
+volatile long encoder1Pos = 0;
+
+//encoder 2
+int encoder2Pin1 = 0; //CHANGE
+int encoder2Pin2 = 0; //CHANGE
+
+volatile int lastEncoder2Pos = 0;
+volatile long encoder2Pos = 0;
+
+//encoder3
+int encoder3Pin1 = 0; //CHANGE
+int encoder3Pin2 = 0; //CHANGE
+
+volatile int lastEncoder3Pos = 0;
+volatile long encoder3Pos = 0;
+
+//encoder 4
+int encoder4Pin1 = 0; //CHANGE
+int encoder4Pin2 = 0; //CHANGE
+
+volatile int lastEncoder4Pos = 0;
+volatile long encoder4Pos = 0;
+
+//encoder 5
+int encoder5Pin1 = 0; //CHANGE
+int encoder5Pin2 = 0; //CHANGE
+
+volatile int lastEncoder5Pos = 0;
+volatile long encoder5Pos = 0;
+
+//number of modules
 int numModules = 3;
 
+//drive speeds
 float vxMetersPerSec = 0;
 float vyMetersPerSec = 0;
 float radiansPerSec = 0;
 
+//drive kinematics
 float inverseKinematics[6][3] = { {1, 0, 0.083439}, {0, 1, 0}, {1, 0, -0.0359214166}, {0, 1, 0.0512338574}, {1, 0, -0.0359214166}, {0, 1, -0.0512338574} };
 float forwardKinematics[3][6];
 
+//matrix for something idk
 float moduleStatesMatrix[6][3] = {0};
 
+//module states matrix
 moduleState m_moduleStates[3] = { moduleState{0, 0}, moduleState{0, 0}, moduleState{0, 0} };
+
+//previous module states matrix
 moduleState m_prevModuleStates[3] = { moduleState{0, 0}, moduleState{0, 0}, moduleState{0, 0} };
 
+//previous center of rotation(maybe not needed)
 double prev_CoR = 0.0;
 
+//current robot angle degrees
 double robotAngle = 0;
 
+//psuedo inverse function (thanks chat-gpt)
 void calculatePseudoInverse(float A[][3], float Aplus[][6], int rows, int cols) {
   // Temporary variables
   float U[rows][rows], S[rows][cols], V[cols][cols];
@@ -105,6 +146,7 @@ void calculatePseudoInverse(float A[][3], float Aplus[][6], int rows, int cols) 
   }
 }
 
+//mult for moduleStatesMatrix (thanks again chat-gpt)
 void mult(float a[][3], float b[][3], float result[][3]) {
   for (int i = 0; i < 6; i++) {
     for (int j = 0; j < 3; j++) {
@@ -116,6 +158,7 @@ void mult(float a[][3], float b[][3], float result[][3]) {
   }
 }
 
+//gyro stuff
 void quaternionToEuler(float qr, float qi, float qj, float qk, euler_t* ypr, bool degrees = false) {
 
   float sqr = sq(qr);
@@ -135,7 +178,7 @@ void quaternionToEuler(float qr, float qi, float qj, float qk, euler_t* ypr, boo
 }
 
 void setReports() {
-  if (! bno08x.enableReport(SH2_GYRO_INTEGRATED_RV, report_interval)) {
+  if (!bno08x.enableReport(SH2_GYRO_INTEGRATED_RV, report_interval)) {
     bluetooth.println("Could not enable stabilized remote vector");
   }
 }
@@ -144,79 +187,208 @@ void quaternionToEulerRV(sh2_RotationVectorWAcc_t* rotational_vector, euler_t* y
   quaternionToEuler(rotational_vector->real, rotational_vector->i, rotational_vector->j, rotational_vector->k, ypr, degrees);
 }
 
+//convert raw encoder value into angle(degrees)
 double rawEncoderToAngle(long rawValue) {
-  return (rawValue / ;
+  return (rawValue);
 }
 
+//convert angle(degrees) into encoder count
 long angleToRawEncoder(double angle) {
   return angle * 2800;
 }
 
-void updateEncoder(){
-  int MSB = digitalRead(encoderPin1); //MSB = most significant bit
-  int LSB = digitalRead(encoderPin2); //LSB = least significant bit
+//encoder 0 update
+void updateEncoder0(){
+  int MSB = digitalRead(encoder0Pin1); //MSB = most significant bit
+  int LSB = digitalRead(encoder0Pin2); //LSB = least significant bit
 
   int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
-  int sum  = (lastEncoded << 2) | encoded; //adding it to the previous encoded value
+  int sum  = (lastEncoder0Pos << 2) | encoded; //adding it to the previous encoded value
 
-  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderValue --;
-  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderValue ++;
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoder0Pos --;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoder0Pos ++;
 
-  lastEncoded = encoded; //store this value for next time
+  lastEncoder0Pos = encoded; //store this value for next time
+}
+
+//encoder 1 update
+void updateEncoder1(){
+  int MSB = digitalRead(encoder1Pin1); //MSB = most significant bit
+  int LSB = digitalRead(encoder1Pin2); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  int sum  = (lastEncoder1Pos << 2) | encoded; //adding it to the previous encoded value
+
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoder1Pos --;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoder1Pos ++;
+
+  lastEncoder1Pos = encoded; //store this value for next time
+}
+
+//encoder 2 update
+void updateEncoder2(){
+  int MSB = digitalRead(encoder2Pin1); //MSB = most significant bit
+  int LSB = digitalRead(encoder2Pin2); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  int sum  = (lastEncoder2Pos << 2) | encoded; //adding it to the previous encoded value
+
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoder2Pos --;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoder2Pos ++;
+
+  lastEncoder2Pos = encoded; //store this value for next time
+}
+
+//encoder 3 update
+void updateEncoder3(){
+  int MSB = digitalRead(encoder3Pin1); //MSB = most significant bit
+  int LSB = digitalRead(encoder3Pin2); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  int sum  = (lastEncoder3Pos << 2) | encoded; //adding it to the previous encoded value
+
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoder3Pos --;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoder3Pos ++;
+
+  lastEncoder3Pos = encoded; //store this value for next time
+}
+
+//encoder 4 update
+void updateEncoder4(){
+  int MSB = digitalRead(encoder4Pin1); //MSB = most significant bit
+  int LSB = digitalRead(encoder4Pin2); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  int sum  = (lastEncoder4Pos << 2) | encoded; //adding it to the previous encoded value
+
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoder4Pos --;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoder4Pos ++;
+
+  lastEncoder4Pos = encoded; //store this value for next time
+}
+
+//encoder 5 update
+void updateEncoder5(){
+  int MSB = digitalRead(encoder5Pin1); //MSB = most significant bit
+  int LSB = digitalRead(encoder5Pin2); //LSB = least significant bit
+
+  int encoded = (MSB << 1) |LSB; //converting the 2 pin value to single number
+  int sum  = (lastEncoder5Pos << 2) | encoded; //adding it to the previous encoded value
+
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoder5Pos --;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoder5Pos ++;
+
+  lastEncoder5Pos = encoded; //store this value for next time
 }
 
 void setup() {
-  Serial.begin(9600);           // set up Serial library at 9600 bps
-  Serial.println("Adafruit Motorshield v2 - DC Motor test!");
-
+  //begin bluetooth and Alfredo
   bluetooth.begin("diffytest");
   AlfredoConnect.begin(bluetooth);
 
-  if (!rearModules.begin() && !frontModuleAndExtra.begin()) {         // create with the default frequency 1.6KHz
-    Serial.println("Could not find Motor Shields. Check wiring.");
-    while (1);
+  //wait for Alfredo
+  while (!(AlfredoConnect.getGamepadCount() >= 1)) {
+    delay(100);
+    AlfredoConnect.update();
   }
-  Serial.println("Motor Shield found.");
 
+  //wait for gyro
   if (!bno08x.begin_I2C()) {
     bluetooth.println("Failed to find BNO08x chip. Restart to attempt reconnecting");
   }
 
+  //sets report/report interval
   setReports();
 
-  pinMode(encoderPin1, INPUT_PULLUP); 
-  pinMode(encoderPin2, INPUT_PULLUP);
+  //encoder 0 setup
+  pinMode(encoder0Pin1, INPUT_PULLUP); 
+  pinMode(encoder0Pin2, INPUT_PULLUP);
 
-  digitalWrite(encoderPin1, HIGH);
-  digitalWrite(encoderPin2, HIGH);
+  digitalWrite(encoder0Pin1, HIGH);
+  digitalWrite(encoder0Pin2, HIGH);
 
-  attachInterrupt(0, updateEncoder, CHANGE); 
-  attachInterrupt(1, updateEncoder, CHANGE);
+  attachInterrupt(0, updateEncoder0, CHANGE); 
+  attachInterrupt(1, updateEncoder0, CHANGE);
 
+  //encoder 1 setup
+  pinMode(encoder1Pin1, INPUT_PULLUP); 
+  pinMode(encoder1Pin2, INPUT_PULLUP);
+
+  digitalWrite(encoder1Pin1, HIGH);
+  digitalWrite(encoder1Pin2, HIGH);
+
+  attachInterrupt(0, updateEncoder1, CHANGE); 
+  attachInterrupt(1, updateEncoder1, CHANGE);
+
+  //encoder 2 setup
+  pinMode(encoder2Pin1, INPUT_PULLUP); 
+  pinMode(encoder2Pin2, INPUT_PULLUP);
+
+  digitalWrite(encoder2Pin1, HIGH);
+  digitalWrite(encoder2Pin2, HIGH);
+
+  attachInterrupt(0, updateEncoder2, CHANGE); 
+  attachInterrupt(1, updateEncoder2, CHANGE);
+
+  //encoder 3 setup
+  pinMode(encoder3Pin1, INPUT_PULLUP); 
+  pinMode(encoder3Pin2, INPUT_PULLUP);
+
+  digitalWrite(encoder3Pin1, HIGH);
+  digitalWrite(encoder3Pin2, HIGH);
+
+  attachInterrupt(0, updateEncoder3, CHANGE); 
+  attachInterrupt(1, updateEncoder3, CHANGE);
+
+  //encoder 4 setup
+  pinMode(encoder4Pin1, INPUT_PULLUP); 
+  pinMode(encoder4Pin2, INPUT_PULLUP);
+
+  digitalWrite(encoder4Pin1, HIGH);
+  digitalWrite(encoder4Pin2, HIGH);
+
+  attachInterrupt(0, updateEncoder4, CHANGE); 
+  attachInterrupt(1, updateEncoder4, CHANGE);
+
+  //encoder 5 setup
+  pinMode(encoder5Pin1, INPUT_PULLUP); 
+  pinMode(encoder5Pin2, INPUT_PULLUP);
+
+  digitalWrite(encoder5Pin1, HIGH);
+  digitalWrite(encoder5Pin2, HIGH);
+
+  attachInterrupt(0, updateEncoder5, CHANGE); 
+  attachInterrupt(1, updateEncoder5, CHANGE);
+
+  //calculate drive kinematics on startup
   calculatePseudoInverse(inverseKinematics, forwardKinematics, 6, 3);
 }
 
 void loop() {
+  //drive stuff
   if (AlfredoConnect.getGamepadCount() >= 1) {
     float xVel = AlfredoConnect.getAxis(0, 1);
     float yVel = AlfredoConnect.getAxis(0, 0);
     float rot = AlfredoConnect.getAxis(0, 2);
     
     drive(xVel, yVel, rot, false);
-
   }
 
+  //gyro reset print
   if (bno08x.wasReset()) {
     bluetooth.println("sensor was reset");
     setReports();
   }
 
+  //update gyro reading
   if (bno08x.getSensorEvent(&sensorValue)) {
     quaternionToEulerRV(&sensorValue.un.arvrStabilizedRV, &ypr, true);
   }
 }
 
+//converts speeds into swerve states
 void toSwerveModuleStates(float vxMeterSec, float vyMeterSec, float radPerSec) {
+  //set everything to 0 if no input
   if (vxMeterSec == 0.0 && vyMeterSec == 0.0 && radPerSec == 0.0) {
     for(int i = 0; i < numModules; i++) {
       m_moduleStates[i].angle = 0.0;
@@ -224,15 +396,23 @@ void toSwerveModuleStates(float vxMeterSec, float vyMeterSec, float radPerSec) {
     }
   }
 
+  //new chassis speeds matrix
   float chassisSpeedVector[1][3] = {vxMeterSec, vyMeterSec, radPerSec};
 
+  //mult kinematics and chassis speeds to get states matrix
   mult(inverseKinematics, chassisSpeedVector, moduleStatesMatrix);
 
+  //set module states speed/angle to 0
   for (int i = 0; i < numModules; i++) {
     m_moduleStates[i].speed = 0.0;
     m_moduleStates[i].angle = 0.0;
   }
 
+  //sin/cos vars
+  double m_sin = 0;
+  double m_cos = 0;
+
+  //set module state array with correct speeds/angles
   for (int i = 0; i < numModules; i++) {
     double x = moduleStatesMatrix[i * 2][0];
     double y = moduleStatesMatrix[i * 2 + 1][0];
@@ -251,12 +431,14 @@ void toSwerveModuleStates(float vxMeterSec, float vyMeterSec, float radPerSec) {
   }
 }
 
+//convert joystick input into field oriented speeds
 void fromFieldRelSpeed(float vxMetersSec, float vyMetersSec, float radiansSec, float robotAngle) {
   vxMetersPerSec = vxMetersSec * cos(robotAngle) + vyMetersSec * sin(robotAngle);
   vyMetersPerSec = -vxMetersSec * sin(robotAngle) + vyMetersSec * cos(robotAngle);
   radiansPerSec = radiansSec;
 }
 
+//make sure speeds are not too high
 void desaturateWheelSpeeds(moduleState moduleStates[], double attainableMaxSpeedMetersPerSecond) {
   double realMaxSpeed = moduleStates[0].speed;
   
@@ -273,6 +455,7 @@ void desaturateWheelSpeeds(moduleState moduleStates[], double attainableMaxSpeed
   }
 }
 
+//uses current and new rot to optimize module angle
 void addRotation(float currentRotation, float newRotation, int module) {
   float cosCurrent = cos(currentRotation);
   float sinCurrent = sin(currentRotation);
@@ -285,19 +468,23 @@ void addRotation(float currentRotation, float newRotation, int module) {
   m_moduleStates[module].angle = atan2(sinResult, cosResult);
 }
 
+//optimize modules
 void optimize() {
+  //module 0
   float delta0 = m_prevModuleStates[0].angle - m_moduleStates[0].angle;
   if (abs(delta0) > 90.0) {
     m_moduleStates[0].speed *= -1;
     addRotation(m_prevModuleStates[0].angle, m_moduleStates[0].angle, 0);
   }
 
+  //module 1
   float delta1 = m_prevModuleStates[1].angle - m_moduleStates[1].angle;
   if (abs(delta1) > 90.0) {
     m_moduleStates[1].speed *= -1;
     addRotation(m_prevModuleStates[1].angle, m_moduleStates[1].angle, 1);
   }
 
+  //module 2
   float delta2 = m_prevModuleStates[2].angle - m_moduleStates[2].angle;
   if (abs(delta2) > 90.0) {
     m_moduleStates[2].speed *= -1;
@@ -305,57 +492,49 @@ void optimize() {
   }
 }
 
-float getModuleSpeed(int module) {
-  return m_moduleStates[module].speed * 255;
-}
+//helper for setting module states
+// void  toMotorOutput() {
+//   int desiredCounts = ();
+//   int prevCounts = (prevAngle / 360.0 * ENCODER_RESOLUTION);
+// }
 
-void  toMotorOutput() {
-  int desiredCounts = ();
-  int prevCounts = (prevAngle / 360.0 * ENCODER_RESOLUTION);
-}
-
+//set module states and motor speeds
 void setModuleStates(moduleState moduleStates[]) {
+  //optimize modules
   optimize();
 
-  
+  //calculate motor output to set module angle
+  //TODO: math
 
+  //set module0 drive speeds
   if (moduleStates[0].speed < 0) {
-    frontLeft->run(FORWARD);
-    frontRight->run(BACKWARD);
-    frontLeft->setSpeed(getModuleSpeed(0));
-    frontRight->setSpeed(getModuleSpeed(0));
+    rearModLeft.set(moduleStates[0].speed);
+    rearModRight.set(-moduleStates[0].speed);
   } else {
-    frontLeft->run(BACKWARD);
-    frontRight->run(FORWARD);
-    frontLeft->setSpeed(getModuleSpeed(0));
-    frontRight->setSpeed(getModuleSpeed(0));
+    rearModLeft.set(-moduleStates[0].speed);
+    rearModRight.set(moduleStates[0].speed);
   }
 
+  //set module1 drive speeds
   if (moduleStates[1].speed < 0) {
-    frontLeft->run(FORWARD);
-    frontRight->run(BACKWARD);
-    frontLeft->setSpeed(getModuleSpeed(1));
-    frontRight->setSpeed(getModuleSpeed(1));
+    frontLModLeft.set(moduleStates[1].speed);
+    frontLModRight.set(-moduleStates[1].speed);
   } else {
-    frontLeft->run(BACKWARD);
-    frontRight->run(FORWARD);
-    frontLeft->setSpeed(getModuleSpeed(1));
-    frontRight->setSpeed(getModuleSpeed(1));
+    frontLModLeft.set(-moduleStates[1].speed);
+    frontLModRight.set(moduleStates[1].speed);
   }
 
+  //set module2 drive speeds
   if (moduleStates[2].speed < 0) {
-    frontLeft->run(FORWARD);
-    frontRight->run(BACKWARD);
-    frontLeft->setSpeed(getModuleSpeed(2));
-    frontRight->setSpeed(getModuleSpeed(2));
+    frontRModLeft.set(moduleStates[2].speed);
+    frontRModRight.set(-moduleStates[2].speed);
   } else {
-    frontLeft->run(BACKWARD);
-    frontRight->run(FORWARD);
-    frontLeft->setSpeed(getModuleSpeed(2));
-    frontRight->setSpeed(getModuleSpeed(2));
+    frontRModLeft.set(-moduleStates[2].speed);
+    frontRModRight.set(moduleStates[2].speed);
   }
 }
 
+//main drive function
 void drive(float xVel, float yVel, float rot, bool fieldCentric) {
   if(!fieldCentric) {
     vxMetersPerSec = xVel;
